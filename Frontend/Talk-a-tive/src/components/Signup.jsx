@@ -69,6 +69,7 @@ function Signup() {
           isClosable: true,
           position: "bottom",
         });
+        setPicLoading(false)
         navigate("")
     } catch (error) {
       toast({
