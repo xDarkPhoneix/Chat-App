@@ -1,54 +1,63 @@
-import React from 'react';
-import { IconButton, Modal, ModalBody, ModalCloseButton,ModalFooter, ModalContent, ModalHeader, ModalOverlay, useDisclosure ,Button, Image} from '@chakra-ui/react';
-import { ViewIcon } from '@chakra-ui/icons';
-import { Text } from '@chakra-ui/react';
+import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { FiEye, FiX } from 'react-icons/fi';
 
-
-function  ProfileModal ({user,children}) {
-    const { isOpen, onOpen, onClose } = useDisclosure();
-   
+function ProfileModal({ user, children }) {
+    const [isOpen, setIsOpen] = useState(false);
 
     return (
       <>
        {children ? (
-        <span onClick={onOpen}>{children}</span>
+        <span onClick={() => setIsOpen(true)} className="cursor-pointer block">{children}</span>
       ) : (
-        <IconButton d={{ base: "flex" }} icon={<ViewIcon />} onClick={onOpen} />
+        <button 
+          className="p-2 hover:bg-dark-700 rounded-full text-gray-300 hover:text-white transition-colors border border-white/5 flex items-center justify-center" 
+          onClick={() => setIsOpen(true)}
+        >
+          <FiEye size={20} />
+        </button>
       )}
-       <Modal size="lg" onClose={onClose} isOpen={isOpen} isCentered>
-        <ModalOverlay />
-        <ModalContent h="410px">
-          <ModalHeader
-            fontSize="40px"
-            fontFamily="Work sans"
-            d="flex"
-            justifyContent="center"
-          >
-            {user.data.loggedInUser.name}
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody
-           className='flex flex-col items-center justify-between'
-           
-          >
-            <Image
-              borderRadius="full"
-              boxSize="150px"
-              src={user.data.loggedInUser.pic}
-              alt={user.data.loggedInUser.name}
-            />
-            <Text
-              fontSize={{ base: "28px", md: "30px" }}
-              fontFamily="Work sans"
+      
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsOpen(false)}></div>
+          
+          <div className="relative glass-panel bg-dark-800 border border-white/10 rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in z-[110] flex flex-col">
+            <button 
+              onClick={() => setIsOpen(false)} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-full hover:bg-dark-700 transition-colors"
             >
-              Email: {user.data.loggedInUser.email}
-            </Text>
-          </ModalBody>
-          <ModalFooter>
-            <Button onClick={onClose}>Close</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+               <FiX size={24} />
+            </button>
+            
+            <div className="flex flex-col items-center justify-center py-6">
+              <h2 className="text-3xl md:text-4xl font-bold font-sans text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary-400 to-accent-400">
+                {user?.data?.loggedInUser?.name}
+              </h2>
+              
+              <img 
+                className="w-36 h-36 rounded-full object-cover border-4 border-dark-900 shadow-xl mb-8"
+                src={user?.data?.loggedInUser?.pic || "https://ui-avatars.com/api/?name=User&background=252525&color=fff"}
+                alt={user?.data?.loggedInUser?.name} 
+              />
+              
+              <p className="text-xl md:text-2xl text-gray-300 font-medium">
+                Email: {user?.data?.loggedInUser?.email}
+              </p>
+            </div>
+            
+            <div className="flex justify-end mt-2 pt-4 border-t border-white/5">
+              <button 
+                className="bg-dark-700/80 hover:bg-dark-600 px-5 py-2.5 rounded-xl text-white font-semibold transition-colors border border-white/10 shadow-sm" 
+                onClick={() => setIsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       </>
     )
 }

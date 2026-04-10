@@ -1,38 +1,31 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-
 const ChatContext=createContext()
 
 const ChatProvider=({children})=>{ 
-    const END_POINT="https://chat-app-j86o.onrender.com" 
+    const END_POINT="https://chat-app-j86o.onrender.com"
     const [user,setUser]=useState()
     const [selectedChat,setSelectedChat]=useState()
     const [chats,setChats]=useState([])
     const [notifications,setNotifications]=useState([])
     const [fetchAgain,setFetchAgain]=useState(false)
    
-
-   
-
-  
-   
+    const navigate = useNavigate();
 
     useEffect(()=>{
-       const userInfo=JSON.parse( localStorage.getItem("userInfo"))
-      
+       const userInfo=JSON.parse(localStorage.getItem("userInfo"))
        setUser(userInfo)
        
-       
-       
-    },[])
+       if(!userInfo) {
+           navigate("/")
+       }
+    },[navigate])
 
 return (
-
     <ChatContext.Provider value={{user,setUser,selectedChat,setSelectedChat,chats,setChats,fetchAgain,setFetchAgain,notifications,setNotifications,END_POINT}}>
       {children}
     </ChatContext.Provider>
-  
 )
 }
 

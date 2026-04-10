@@ -1,31 +1,17 @@
-import { CloseIcon } from '@chakra-ui/icons';
-import { Badge } from '@chakra-ui/react';
 import React from 'react';
+import { FiX } from 'react-icons/fi';
 
-function  UserBadgeItem ({ user, handleFunction, admin }) {
-  
-  
+function UserBadgeItem({ user, handleFunction, admin }) {
     return (
-        <Badge
-        px={2}
-        py={1}
-        borderRadius="lg"
-        m={1}
-        mb={2}
-        variant="solid"
-        fontSize={12}
-        colorScheme="purple"
-        cursor="pointer"
-        onClick={handleFunction}
-      >
-        {user.name}
-        {admin?._id === user._id && <span> (Admin)</span>}
-        
-        
-        <CloseIcon pl={1} />
-      </Badge>
+        <span
+          onClick={handleFunction}
+          className="inline-flex items-center px-2 py-1 rounded-lg m-1 mb-2 text-xs font-semibold bg-accent-500/20 text-accent-400 border border-accent-500/30 cursor-pointer hover:bg-accent-500 hover:text-white transition-colors"
+        >
+          {user.name}
+          {admin?._id === user._id && <span className="ml-1 opacity-75">(Admin)</span>}
+          <FiX className="ml-1 opacity-75" />
+        </span>
     );
-    
 }
 
 export default UserBadgeItem;

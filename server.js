@@ -12,7 +12,7 @@ const app = express();
 
 connectDB();
 var corsOptions = {
-  origin: "https://chat-app-j86o.onrender.com",
+  origin: "https://chat-app-j86o.onrender.com",     //https://chat-app-j86o.onrender.com
   methods: ["GET, POST, PUT, DELETE, OPTIONS"],
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
@@ -25,19 +25,22 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public"));
 app.use(cookieParser());
 
-const pub = new Redis({
+const redisConfig = {
   host: process.env.AIVEN_HOST,
   port: process.env.AIVEN_PORT,
   username: "default",
   password: process.env.AIVEN_PASSWORD,
-});
+  tls: {}, // 🔥 REQUIRED for Aiven
+  maxRetriesPerRequest: null, // prevent crash
+};
+const pub = new Redis(redisConfig);
+const sub = new Redis(redisConfig);
+pub.on("error", (err) => console.error("Redis Pub Error:", err));
+sub.on("error", (err) => console.error("Redis Sub Error:", err));
 
-const sub = new Redis({
-  host: process.env.AIVEN_HOST,
-  port: process.env.AIVEN_PORT,
-  username: "default",
-  password: process.env.AIVEN_PASSWORD,
-});
+pub.on("connect", () => console.log("✅ Pub connected"));
+sub.on("connect", () => console.log("✅ Sub connected"));
+sub.on("connect", () => console.log("✅ Sub connected"));
 
 //routes import  user routes
 import UserRouter from "./src/routes/User.routes.js";
@@ -96,7 +99,7 @@ const server = app.listen(PORT, () => {
 const io = new Server(server, {
   pingTimeout: 60000,
   cors: {
-    origin: "https://chat-app-j86o.onrender.com",
+    origin: ["http://localhost:5173", "https://chat-app-j86o.onrender.com"],
   },
 });
 
@@ -104,26 +107,28 @@ await sub.subscribe("new message");
 
 sub.on("message", (channel, data) => {
   const { newMessageRecieved, id } = JSON.parse(data);
-  // const decryptedMessage = {
-  //   ...newMessageRecieved, // copy all existing fields
-  //   content: decryptMessage(newMessageRecieved.content), // replace only content
-  // };
-
+  console.log(`[Redis] Received via pub/sub for room ${id}. Emitting 'message recieved'`);
   io.to(id).emit("message recieved", newMessageRecieved);
 });
-io.on("connection", (socket) => {
-  socket.on("setup", (userData) => {
-    // console.log("user",userData._id);
 
+io.on("connection", (socket) => {
+  console.log("New socket connection:", socket.id);
+
+  socket.on("setup", (userData) => {
+    if (!userData || !userData._id) {
+      console.log("Setup failed: INVALID userData", userData);
+      return;
+    }
+    console.log(`Socket ${socket.id} joining room: ${userData._id}`);
     socket.join(userData._id);
     socket.emit("connected");
   });
 
   socket.on("join chat", (room) => {
-    // console.log("hola",room);
-
+    console.log(`Socket ${socket.id} joining chat room: ${room}`);
     socket.join(room);
   });
+
   socket.on("typing", (room) => {
     socket.in(room).emit("typing");
   });
@@ -133,29 +138,19 @@ io.on("connection", (socket) => {
   });
 
   socket.on("new message", async (newMessageRecieved) => {
-    // console.log(newMessageRecieved.content);
-
-    //await pub.publish("new message",JSON.stringify({newMessageRecieved}))
+   
     var chat = newMessageRecieved.chat;
     if (!chat.users) return console.log("chat.users not defined");
 
     chat.users.forEach((user) => {
-      if (user._id == newMessageRecieved.sender._id) {
-        return;
-      }
-      //  console.log("user iD",user._id);
-
+      if (user._id == newMessageRecieved.sender._id) return;
       var id = user._id;
-
-
-
+     
       pub.publish("new message", JSON.stringify({ newMessageRecieved, id }));
-
     });
   });
 
   socket.off("disconnect", () => {
     console.log("user Disconnected");
-    //socket.leave(userData._id)
   });
 });

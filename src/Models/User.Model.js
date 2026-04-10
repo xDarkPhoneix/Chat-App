@@ -21,7 +21,7 @@ const UserSchema = mongoose.Schema(
     pic: {
       type: "string",
       default:
-        "https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg",
+        "https://ui-avatars.com/api/?name=User&background=252525&color=fff",
     },
     isAdmin: {
       type: Boolean,
