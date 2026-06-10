@@ -36,9 +36,9 @@ export const uploadPdfToCloudinary = async (localFilePath) => {
 
     const result = await cloudinary.uploader.upload(localFilePath, {
       resource_type: "raw",
+      type: "upload",
+      access_mode: "public",
       folder: "documents",
-      use_filename: true,
-      unique_filename: true,
     });
 
     if (fs.existsSync(localFilePath)) {
