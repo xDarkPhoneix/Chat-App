@@ -57,4 +57,4 @@ export const uploadPdfToCloudinary = async (localFilePath) => {
   }
 };
 
-export { uploadOnCloudinary, uploadPdfToCloudinary };
+export { uploadOnCloudinary };
