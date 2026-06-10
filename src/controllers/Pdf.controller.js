@@ -6,6 +6,7 @@ import DocumentChunk from "../Models/document.model.js";
 import mongoose from "mongoose";
 import { asynchandler } from "../utils/asynchandler.js";
 import { API_ERROR } from "../utils/ApiError.js";
+import { uploadPdfToCloudinary } from "../utils/cloudinary.js";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_API_KEY,
@@ -26,8 +27,7 @@ export const getQueue = () => {
   return myQueue;
 };
 
-import fs from "fs";
-import { uploadPdfToCloudinary } from "../utils/cloudinaryPdf.js";
+
 
 const uploadpdf = asynchandler(async (req, res) => {
   const userId = req.user._id;
