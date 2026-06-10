@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { asynchandler } from "../utils/asynchandler.js";
 import { API_ERROR } from "../utils/ApiError.js";
 import { uploadPdfToCloudinary } from "../utils/cloudinary.js";
+import { v2 as cloudinary } from "cloudinary";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GOOGLE_API_KEY,
@@ -27,24 +28,19 @@ export const getQueue = () => {
   return myQueue;
 };
 
-
-
 const uploadpdf = asynchandler(async (req, res) => {
   const userId = req.user._id;
 
-  console.log("📥 Received upload request");
+  // console.log("📥 Received upload request");
 
   if (!req.file) {
     throw new API_ERROR(400, "No PDF uploaded");
   }
 
-  console.log(
-    "📄 Uploaded:",
-    req.file.originalname
-  );
+  // console.log("📄 Uploaded:", req.file.originalname);
 
-  const uploadedPdf =
-    await uploadPdfToCloudinary(req.file.path);
+  // Upload PDF to Cloudinary
+  const uploadedPdf = await uploadPdfToCloudinary(req.file.path);
 
   if (!uploadedPdf) {
     throw new API_ERROR(
@@ -53,98 +49,89 @@ const uploadpdf = asynchandler(async (req, res) => {
     );
   }
 
+  const pdfUrl = uploadedPdf.secure_url;
+
+  // Queue job
   await getQueue().add("file-ready", {
     userId,
-
     filename: req.file.originalname,
-
-    fileUrl: uploadedPdf.secure_url,
-
+    fileUrl: pdfUrl,
     publicId: uploadedPdf.public_id,
-
     mimetype: req.file.mimetype,
-
     size: req.file.size,
   });
 
+
   return res.status(200).json({
     success: true,
-
     message:
       "PDF uploaded and queued successfully",
-
     file: {
       filename: req.file.originalname,
-
-      url: uploadedPdf.secure_url,
-
+      url: pdfUrl,
       publicId: uploadedPdf.public_id,
+      resourceType:
+        uploadedPdf.resource_type,
     },
   });
 });
 
 const pdfchat = asynchandler(async (req, res) => {
-  
-    const { query } = req.body;
+  const { query } = req.body;
 
+  /* ---------- EMBEDDING ---------- */
 
-    /* ---------- EMBEDDING ---------- */
+  const embeddingResponse = await ai.models.embedContent({
+    model: "gemini-embedding-2",
 
-    const embeddingResponse = await ai.models.embedContent({
-      model: "gemini-embedding-2",
+    contents: query,
+  });
 
-      contents: query,
-    });
+  const queryEmbedding = embeddingResponse.embeddings[0].values;
 
-    const queryEmbedding = embeddingResponse.embeddings[0].values;
+  console.log("🧠 Query Vector:", queryEmbedding.length);
 
-    console.log("🧠 Query Vector:", queryEmbedding.length);
+  /* ---------- VECTOR SEARCH ---------- */
 
-
-    /* ---------- VECTOR SEARCH ---------- */
-
-    const result = await DocumentChunk.aggregate([
-      {
-        $vectorSearch: {
-          index: "vector_index",
-          path: "embedding",
-          queryVector: queryEmbedding,
-          filter: {
-        userId: req.user._id,
-      },
-          numCandidates: 100,
-          limit: 5,
+  const result = await DocumentChunk.aggregate([
+    {
+      $vectorSearch: {
+        index: "vector_index",
+        path: "embedding",
+        queryVector: queryEmbedding,
+        filter: {
+          userId: req.user._id,
         },
-        
+        numCandidates: 100,
+        limit: 5,
       },
+    },
 
-      {
-        $project: {
-          text: 1,
-          documentId: 1,
-          chunkIndex: 1,
-          score: {
-            $meta: "vectorSearchScore",
-          },
+    {
+      $project: {
+        text: 1,
+        documentId: 1,
+        chunkIndex: 1,
+        score: {
+          $meta: "vectorSearchScore",
         },
       },
-    ]);
+    },
+  ]);
 
-    
+  /* ---------- CONTEXT ---------- */
 
-    /* ---------- CONTEXT ---------- */
+  const context = result.map((item) => item.text).join("\n");
 
-    const context = result.map((item) => item.text).join("\n");
+  /* ---------- GENERATE ANSWER ---------- */
 
-    /* ---------- GENERATE ANSWER ---------- */
+  const chatRes = await ai.models.generateContent({
+    model: "gemini-2.5-flash-lite",
 
-    const chatRes = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite",
+    config: {
+      responseMimeType: "application/json",
 
-      config: {
-        responseMimeType: "application/json",
-
-        systemInstruction: `
+      systemInstruction: `
 You are a helpful and professional AI assistant for a user-based PDF chat application. You strictly generate JSON responses.
 
 Return ONLY valid JSON.
@@ -163,37 +150,36 @@ Rules:
   "sources":[]
 }
 `,
-      },
+    },
 
-      contents: `
+    contents: `
 Context:
 ${context}
 
 Question:
 ${query}
 `,
-    });
+  });
 
-    let parsed;
+  let parsed;
 
-    try {
-      parsed = JSON.parse(chatRes.text);
-    } catch {
-      parsed = {
-        answer: "Failed to parse AI response",
+  try {
+    parsed = JSON.parse(chatRes.text);
+  } catch {
+    parsed = {
+      answer: "Failed to parse AI response",
 
-        sources: [],
-      };
-    }
+      sources: [],
+    };
+  }
 
-    return res.json({
-      success: true,
+  return res.json({
+    success: true,
 
-      message: parsed,
+    message: parsed,
 
-      matches: result,
-    });
-  
+    matches: result,
+  });
 });
 
 export { uploadpdf, pdfchat };

@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 const ChatContext=createContext()
 
 const ChatProvider=({children})=>{ 
-    const END_POINT="https://chat-app-j86o.onrender.com"        //"http://localhost:3000"
+    const END_POINT="https://chat-app-j86o.onrender.com"       //"http://localhost:3000" --- IGNORE ---     
     const [user,setUser]=useState()
     const [selectedChat,setSelectedChat]=useState()
     const [chats,setChats]=useState([])

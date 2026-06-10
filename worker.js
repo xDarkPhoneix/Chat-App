@@ -6,18 +6,19 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import mongoose from "mongoose";
+import { v2 as cloudinary } from "cloudinary";
 
 import DocumentChunk from "./src/Models/document.model.js";
 import connectDB from "./src/db/dbconnect.js";
 
 dotenv.config();
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 await connectDB();
-
-console.log(
-  "Worker DB:",
-  mongoose.connection.db.databaseName
-);
 
 /* ---------------- REDIS CONNECTION ---------------- */
 
@@ -65,42 +66,21 @@ const worker = new Worker(
 
   async (job) => {
     try {
-      console.log("✅ Job Received:", job.data);
-
-      const {
-        userId,
-        fileUrl,
-        filename,
-      } = job.data;
+      const { userId, fileUrl, filename, publicId } = job.data;
 
       if (!fileUrl) {
-        throw new Error(
-          "fileUrl is missing from job data"
-        );
+        throw new Error("fileUrl is missing from job data");
       }
 
       /* ---------- DOWNLOAD PDF ---------- */
 
-      console.log(
-        "📥 Downloading PDF from Cloudinary..."
-      );
-
       const response = await fetch(fileUrl);
 
       if (!response.ok) {
-        throw new Error(
-          `Failed to download PDF: ${response.status}`
-        );
+        throw new Error(`Failed to download PDF: ${response.status}`);
       }
 
-      const pdfBuffer = Buffer.from(
-        await response.arrayBuffer()
-      );
-
-      console.log(
-        "✅ PDF Downloaded:",
-        filename
-      );
+      const pdfBuffer = Buffer.from(await response.arrayBuffer());
 
       /* ---------- LOAD PDF ---------- */
 
@@ -114,103 +94,82 @@ const worker = new Worker(
 
       /* ---------- EXTRACT TEXT ---------- */
 
-      for (
-        let pageNum = 1;
-        pageNum <= pdfDoc.numPages;
-        pageNum++
-      ) {
-        const page =
-          await pdfDoc.getPage(pageNum);
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
 
-        const content =
-          await page.getTextContent();
+        const content = await page.getTextContent();
 
-        text +=
-          content.items
-            .map((item) => item.str)
-            .join(" ") + "\n";
+        text += content.items.map((item) => item.str).join(" ") + "\n";
       }
-
-      console.log(
-        `📄 Extracted Text Length: ${text.length}`
-      );
-
       /* ---------- SPLIT INTO CHUNKS ---------- */
 
-      const splitter =
-        new RecursiveCharacterTextSplitter({
-          chunkSize: 300,
-          chunkOverlap: 50,
-        });
+      const splitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 300,
+        chunkOverlap: 50,
+      });
 
-      const chunks =
-        await splitter.splitText(text);
-
-      console.log(
-        `✂️ Chunks Created: ${chunks.length}`
-      );
+      const chunks = await splitter.splitText(text);
 
       /* ---------- CREATE DOCUMENT ID ---------- */
 
-      const documentId =
-        crypto.randomUUID();
+      const documentId = crypto.randomUUID();
 
       /* ---------- EMBEDDINGS ---------- */
 
       const documents = [];
 
-      for (
-        let i = 0;
-        i < chunks.length;
-        i++
-      ) {
+      for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
 
         try {
-          const result =
-            await genAI.models.embedContent({
-              model:
-                "gemini-embedding-2",
-              contents: chunk,
-            });
+          const result = await genAI.models.embedContent({
+            model: "gemini-embedding-2",
+            contents: chunk,
+          });
 
           documents.push({
             userId,
             documentId,
             chunkIndex: i,
             text: chunk,
-            embedding:
-              result.embeddings[0].values,
+            embedding: result.embeddings[0].values,
           });
-
-          if (i % 20 === 0) {
-            console.log(
-              `📌 Embedded chunk ${i + 1}/${chunks.length}`
-            );
-          }
         } catch (err) {
-          console.error(
-            `❌ Failed chunk ${i}:`,
-            err.message
-          );
+          console.error(`❌ Failed chunk ${i}:`, err.message);
         }
       }
 
       /* ---------- STORE ---------- */
 
       if (documents.length > 0) {
-        await DocumentChunk.insertMany(
-          documents
-        );
-
-        console.log(
-          `✅ Stored ${documents.length} chunks`
-        );
+        await DocumentChunk.insertMany(documents);
       }
 
-      console.log(
-        "🎉 PDF Processing Complete"
-      );
+      /* ---------- DELETE PDF FROM CLOUDINARY ---------- */
+
+      if (documents.length === chunks.length && publicId) {
+        try {
+          console.log("🗑️ Attempting to delete:", publicId);
+
+          const deleteResult = await cloudinary.uploader.destroy(publicId, {
+            resource_type: "raw",
+          });
+
+          console.log("🗑️ Cloudinary delete result:", deleteResult);
+        } catch (err) {
+          console.error("❌ Cloudinary delete failed:", err);
+        }
+      } else {
+        console.log(
+          "⚠️ PDF not deleted because some chunks failed or publicId missing",
+        );
+
+        console.log({
+          publicId,
+          chunks: chunks.length,
+          documents: documents.length,
+        });
+      }
 
       return {
         success: true,
@@ -218,10 +177,7 @@ const worker = new Worker(
         chunks: documents.length,
       };
     } catch (error) {
-      console.error(
-        "❌ Worker Error:",
-        error
-      );
+      console.error("❌ Worker Error:", error);
 
       throw error;
     }
@@ -230,21 +186,18 @@ const worker = new Worker(
   {
     connection: redisConnection,
     concurrency: 2,
-  }
+  },
 );
 
 /* ---------- EVENTS ---------- */
 
 worker.on("completed", (job) => {
-  console.log(
-    `✅ Job ${job.id} completed`
-  );
+  
+  console.log(`✅ Job ${job.id} completed`);
 });
 
 worker.on("failed", (job, err) => {
-  console.log(
-    `❌ Job ${job?.id} failed`
-  );
+  console.log(`❌ Job ${job?.id} failed`);
 
   console.error(err);
 });
@@ -252,9 +205,7 @@ worker.on("failed", (job, err) => {
 /* ---------- SHUTDOWN ---------- */
 
 process.on("SIGTERM", async () => {
-  console.log(
-    "🛑 Shutting down worker..."
-  );
+  console.log("🛑 Shutting down worker...");
 
   await worker.close();
   await redisConnection.quit();
