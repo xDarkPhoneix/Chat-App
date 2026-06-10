@@ -31,7 +31,7 @@ function UpdateGroupChatModal({ fetchAgain, setFetchAgain, fetchMessages }) {
             setLoading(false);
             setSearchResult(data);
         } catch (error) {
-            toast.error("Failed to Load the Search Results");
+            toast.error(error.response?.data?.message || "Failed to Load the Search Results");
             setLoading(false);
         }
     };
@@ -53,7 +53,7 @@ function UpdateGroupChatModal({ fetchAgain, setFetchAgain, fetchMessages }) {
             setGroupChatName("");
             toast.success("Group name updated");
         } catch (error) {
-            toast.error("Error updating group name");
+            toast.error(error.response?.data?.message || "Error updating group name");
             setRenameLoading(false);
         }
     };
@@ -82,7 +82,7 @@ function UpdateGroupChatModal({ fetchAgain, setFetchAgain, fetchMessages }) {
             setLoading(false);
             toast.success("User added successfully");
         } catch (error) {
-            toast.error("Error occurred!");
+            toast.error(error.response?.data?.message || "Error occurred!");
             setLoading(false);
         }
     };
@@ -107,7 +107,7 @@ function UpdateGroupChatModal({ fetchAgain, setFetchAgain, fetchMessages }) {
             setLoading(false);
             toast.success("User removed successfully");
         } catch (error) {
-            toast.error("Error occurred!");
+            toast.error(error.response?.data?.message || "Error occurred!");
             setLoading(false);
         }
     };

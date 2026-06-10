@@ -1,19 +1,24 @@
 import dotenv from "dotenv";
+dotenv.config({ path: "./.env" });
 import express from "express";
 import connectDB from "./src/db/dbconnect.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import { Server } from "socket.io";
 import path from "path";
-import Redis from "ioredis";
+import {initializeQueue} from "./src/controllers/Pdf.controller.js";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { connectRedis, getPub, getSub } from "./src/utils/redisConfig.js";
 
-dotenv.config({ path: "./.env" });
+
 const app = express();
 
-connectDB();
+await connectDB();
+await connectRedis();
+initializeQueue();
 var corsOptions = {
-  origin: "https://chat-app-j86o.onrender.com",     //https://chat-app-j86o.onrender.com
-  methods: ["GET, POST, PUT, DELETE, OPTIONS"],
+  origin: "https://chat-app-j86o.onrender.com", //
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
@@ -25,23 +30,6 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public"));
 app.use(cookieParser());
 
-const redisConfig = {
-  host: process.env.AIVEN_HOST,
-  port: process.env.AIVEN_PORT,
-  username: "default",
-  password: process.env.AIVEN_PASSWORD,
-  tls: {}, // 🔥 REQUIRED for Aiven
-  maxRetriesPerRequest: null, // prevent crash
-};
-const pub = new Redis(redisConfig);
-const sub = new Redis(redisConfig);
-pub.on("error", (err) => console.error("Redis Pub Error:", err));
-sub.on("error", (err) => console.error("Redis Sub Error:", err));
-
-pub.on("connect", () => console.log("✅ Pub connected"));
-sub.on("connect", () => console.log("✅ Sub connected"));
-sub.on("connect", () => console.log("✅ Sub connected"));
-
 //routes import  user routes
 import UserRouter from "./src/routes/User.routes.js";
 
@@ -50,11 +38,19 @@ app.use("/users", UserRouter);
 import ChatRouter from "./src/routes/Chat.routes.js";
 app.use("/chats", ChatRouter);
 
+//pdf routes
+import PdfRouter from "./src/routes/pdf.routes.js";
+app.use("/api", PdfRouter);
+
 //message routes
 import MessageRouter from "./src/routes/Message.routes.js";
 import { decryptMessage, encryptMessage } from "./src/utils/encrypt.js";
 
 app.use("/message", MessageRouter);
+
+//aichat routes
+import AiChatRouter from "./src/routes/AiChat.routes.js";
+app.use("/aichat", AiChatRouter);
 
 // -----------Deployment Code----------------
 
@@ -63,7 +59,7 @@ if (process.env.NODE_ENV === "development") {
   app.use(express.static(path.join(_dirname1, "Frontend/Talk-a-tive/dist")));
   app.get("*", (req, res) => {
     res.sendFile(
-      path.resolve(_dirname1, "Frontend", "Talk-a-tive", "dist", "index.html")
+      path.resolve(_dirname1, "Frontend", "Talk-a-tive", "dist", "index.html"),
     );
   });
 } else {
@@ -87,9 +83,13 @@ app.get("/api/data/:id", (req, res) => {
   res.send(singlechat);
 });
 
+import { errorHandler } from "./src/middleware/error.middleware.js";
+app.use(errorHandler);
+
 const PORT = process.env.PORT || 3000;
 
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:3000";
+
 
 const server = app.listen(PORT, () => {
   console.log(`Server is listning on port : ${API_BASE_URL}`);
@@ -103,13 +103,9 @@ const io = new Server(server, {
   },
 });
 
-await sub.subscribe("new message");
+io.adapter(createAdapter(getPub(), getSub()));
 
-sub.on("message", (channel, data) => {
-  const { newMessageRecieved, id } = JSON.parse(data);
-  console.log(`[Redis] Received via pub/sub for room ${id}. Emitting 'message recieved'`);
-  io.to(id).emit("message recieved", newMessageRecieved);
-});
+console.log("✅ Redis Socket Adapter Connected");
 
 io.on("connection", (socket) => {
   console.log("New socket connection:", socket.id);
@@ -138,15 +134,22 @@ io.on("connection", (socket) => {
   });
 
   socket.on("new message", async (newMessageRecieved) => {
-   
-    var chat = newMessageRecieved.chat;
-    if (!chat.users) return console.log("chat.users not defined");
+    const chat = newMessageRecieved.chat;
+
+    if (!chat.users) {
+      return console.log("❌ chat.users not defined");
+    }
 
     chat.users.forEach((user) => {
-      if (user._id == newMessageRecieved.sender._id) return;
-      var id = user._id;
-     
-      pub.publish("new message", JSON.stringify({ newMessageRecieved, id }));
+      // Skip sender
+      if (user._id == newMessageRecieved.sender._id) {
+        return;
+      }
+
+      console.log(`📤 Sending message to room ${user._id}`);
+
+      // Redis adapter handles scaling automatically
+      io.to(user._id).emit("message recieved", newMessageRecieved);
     });
   });
 

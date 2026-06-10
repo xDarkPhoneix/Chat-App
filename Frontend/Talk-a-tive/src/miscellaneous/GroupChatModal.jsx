@@ -32,7 +32,7 @@ function GroupChatModal({ children }) {
           setSearchResult(data);
         } 
         catch (error) {
-          toast.error("Failed to Load the Search Results");
+          toast.error(error.response?.data?.message || "Failed to Load the Search Results");
           setLoading(false);
         }
     };
@@ -61,7 +61,7 @@ function GroupChatModal({ children }) {
             setSearch("");
             toast.success("New Group Chat Created!");
         } catch (error) {
-            toast.error("Failed to Create the Chat!");
+            toast.error(error.response?.data?.message || "Failed to Create the Chat!");
         }
     };
     

@@ -3,7 +3,8 @@ import toast from 'react-hot-toast';
 import { FiSearch, FiBell, FiChevronDown, FiX } from "react-icons/fi";
 import { ChatState } from '../Contexts/ChatContext';
 import ProfileModal from './ProfileModal';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { FaRobot, FaFilePdf } from 'react-icons/fa';
 import axios from 'axios';
 import ChatLoading from './ChatLoading';
 import UserListItem from './UserListItems';
@@ -52,7 +53,7 @@ function SideDrawer() {
             setLoading(false);
             setSearchResult(data);
         } catch (error) {
-            toast.error("Failed to Load the Search Results");
+            toast.error(error.response?.data?.message || "Failed to Load the Search Results");
             setLoading(false);
         }
     }
@@ -71,7 +72,7 @@ function SideDrawer() {
             setLoadingChat(false);
             setIsOpen(false); // Close drawer
         } catch (error) {
-            toast.error("Error Occurred While fetching chat!");
+            toast.error(error.response?.data?.message || "Error Occurred While fetching chat!");
             setLoadingChat(false);
         }
     }
@@ -96,9 +97,19 @@ function SideDrawer() {
             </span>
         </button>
 
-        <h1 className='text-xl md:text-2xl font-bold font-sans bg-clip-text text-transparent bg-gradient-to-r from-primary-500 to-accent-500'>
-          Talk-A-Tive
-        </h1>
+        <div className="flex items-center gap-6">
+            <Link to="/chats" className='text-xl md:text-2xl font-bold font-sans bg-clip-text text-transparent bg-gradient-to-r from-primary-500 to-accent-500'>
+              Talk-A-Tive
+            </Link>
+            <div className="hidden md:flex items-center gap-4 border-l border-white/10 pl-4">
+                <Link to="/ai-chat" className="text-gray-300 hover:text-violet-400 font-medium flex items-center gap-2 transition-colors text-sm">
+                    <FaRobot /> AI Chat
+                </Link>
+                <Link to="/pdf-rag" className="text-gray-300 hover:text-red-400 font-medium flex items-center gap-2 transition-colors text-sm">
+                    <FaFilePdf /> PDF Chat
+                </Link>
+            </div>
+        </div>
 
         <div className="flex items-center gap-4">
             

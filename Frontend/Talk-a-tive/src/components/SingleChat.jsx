@@ -35,7 +35,7 @@ function SingleChat() {
       
       socket.emit("join chat", selectedChat._id);
     } catch (error) {
-      toast.error("Failed to Load the Messages");
+      toast.error(error.response?.data?.message || "Failed to Load the Messages");
     }
   };
 
@@ -58,7 +58,7 @@ function SingleChat() {
         socket.emit("new message", data.data);
         setFetchAgain(!fetchAgain);
       } catch (error) {
-        toast.error("Failed to send the Message");
+        toast.error(error.response?.data?.message || "Failed to send the Message");
       }
     }
   };

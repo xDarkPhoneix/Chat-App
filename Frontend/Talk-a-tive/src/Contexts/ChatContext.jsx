@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import   { createContext, useContext, useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const ChatContext=createContext()
 
 const ChatProvider=({children})=>{ 
-    const END_POINT="https://chat-app-j86o.onrender.com"
+    const END_POINT="https://chat-app-j86o.onrender.com"        //"http://localhost:3000"
     const [user,setUser]=useState()
     const [selectedChat,setSelectedChat]=useState()
     const [chats,setChats]=useState([])
@@ -12,15 +12,18 @@ const ChatProvider=({children})=>{
     const [fetchAgain,setFetchAgain]=useState(false)
    
     const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(()=>{
        const userInfo=JSON.parse(localStorage.getItem("userInfo"))
        setUser(userInfo)
        
        if(!userInfo) {
-           navigate("/")
+           if (location.pathname !== "/" && location.pathname !== "/auth") {
+               navigate("/auth");
+           }
        }
-    },[navigate])
+    },[navigate, location.pathname])
 
 return (
     <ChatContext.Provider value={{user,setUser,selectedChat,setSelectedChat,chats,setChats,fetchAgain,setFetchAgain,notifications,setNotifications,END_POINT}}>

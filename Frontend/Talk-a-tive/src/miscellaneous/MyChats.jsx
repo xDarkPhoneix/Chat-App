@@ -19,7 +19,7 @@ function MyChats() {
           const { data } = await axios.get(`${END_POINT}/chats/fetchchats`, config);
           setChats(data.data);
       } catch (error) {
-          toast.error("Failed to Load the chats");
+          toast.error(error.response?.data?.message || "Failed to Load the chats");
       }
     };
 

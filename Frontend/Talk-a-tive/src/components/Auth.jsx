@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Login from "./Login";
 import Signup from "./Signup";
 import { FaComments } from "react-icons/fa";
 
-function Home() {
+function Auth() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("login");
 
@@ -51,8 +51,10 @@ function Home() {
           {activeTab === "login" ? <Login /> : <Signup />}
         </div>
       </div>
+
+      
     </div>
   );
 }
 
-export default Home;
+export default Auth;
