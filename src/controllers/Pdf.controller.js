@@ -26,39 +26,61 @@ export const getQueue = () => {
   return myQueue;
 };
 
+import fs from "fs";
+import { uploadPdfToCloudinary } from "../utils/cloudinaryPdf.js";
+
 const uploadpdf = asynchandler(async (req, res) => {
-
   const userId = req.user._id;
-  console.log("s",userId);
-  
+
   console.log("📥 Received upload request");
-  if (!fs.existsSync("uploads")) {
-    fs.mkdirSync("uploads");
+
+  if (!req.file) {
+    throw new API_ERROR(400, "No PDF uploaded");
   }
-  
-    if (!req.file) {
-      throw new API_ERROR(400, "No PDF uploaded");
-    }
-    console.log("📄 Uploaded:", req.file.originalname);
-    /* ---------- ADD TO QUEUE ---------- */
 
-    await getQueue().add("file-ready", {
-      userId,
+  console.log(
+    "📄 Uploaded:",
+    req.file.originalname
+  );
+
+  const uploadedPdf =
+    await uploadPdfToCloudinary(req.file.path);
+
+  if (!uploadedPdf) {
+    throw new API_ERROR(
+      500,
+      "Failed to upload PDF to Cloudinary"
+    );
+  }
+
+  await getQueue().add("file-ready", {
+    userId,
+
+    filename: req.file.originalname,
+
+    fileUrl: uploadedPdf.secure_url,
+
+    publicId: uploadedPdf.public_id,
+
+    mimetype: req.file.mimetype,
+
+    size: req.file.size,
+  });
+
+  return res.status(200).json({
+    success: true,
+
+    message:
+      "PDF uploaded and queued successfully",
+
+    file: {
       filename: req.file.originalname,
-      destination: req.file.destination,
-      path: req.file.path,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-    });
-    return res.status(200).json({
-      success: true,
-      message: "PDF uploaded and queued successfully",
-      file: {
-        filename: req.file.originalname,
-        path: req.file.path,
-      },
-    });
 
+      url: uploadedPdf.secure_url,
+
+      publicId: uploadedPdf.public_id,
+    },
+  });
 });
 
 const pdfchat = asynchandler(async (req, res) => {

@@ -1,22 +1,18 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import path from "path";    
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
-import fs from "fs";
-
-import DocumentChunk from  "./src/Models/document.model.js";
-import  connectDB  from "./src/db/dbconnect.js";
 import mongoose from "mongoose";
+
+import DocumentChunk from "./src/Models/document.model.js";
+import connectDB from "./src/db/dbconnect.js";
 
 dotenv.config();
 
 await connectDB();
-
 
 console.log(
   "Worker DB:",
@@ -27,19 +23,14 @@ console.log(
 
 const redisConnection = new IORedis({
   host: process.env.AIVEN_HOST,
-
   port: Number(process.env.AIVEN_PORT),
-
   username: process.env.AIVEN_USERNAME,
-
   password: process.env.AIVEN_PASSWORD,
-
   tls: {},
-
   maxRetriesPerRequest: null,
 });
 
-/* ---------- REDIS EVENT LISTENERS ---------- */
+/* ---------- REDIS EVENTS ---------- */
 
 redisConnection.on("connect", () => {
   console.log("✅ Redis Connected");
@@ -61,6 +52,12 @@ redisConnection.on("reconnecting", () => {
   console.log("🔄 Redis Reconnecting...");
 });
 
+/* ---------- GEMINI ---------- */
+
+const genAI = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_API_KEY,
+});
+
 /* ---------------- WORKER ---------------- */
 
 const worker = new Worker(
@@ -70,13 +67,42 @@ const worker = new Worker(
     try {
       console.log("✅ Job Received:", job.data);
 
-      // BullMQ already parses objects
-      const data = job.data;
-      const { userId } = job.data;
+      const {
+        userId,
+        fileUrl,
+        filename,
+      } = job.data;
 
-      /* ---------- READ PDF ---------- */
+      if (!fileUrl) {
+        throw new Error(
+          "fileUrl is missing from job data"
+        );
+      }
 
-      const pdfBuffer = fs.readFileSync(data.path);
+      /* ---------- DOWNLOAD PDF ---------- */
+
+      console.log(
+        "📥 Downloading PDF from Cloudinary..."
+      );
+
+      const response = await fetch(fileUrl);
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to download PDF: ${response.status}`
+        );
+      }
+
+      const pdfBuffer = Buffer.from(
+        await response.arrayBuffer()
+      );
+
+      console.log(
+        "✅ PDF Downloaded:",
+        filename
+      );
+
+      /* ---------- LOAD PDF ---------- */
 
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(pdfBuffer),
@@ -88,10 +114,16 @@ const worker = new Worker(
 
       /* ---------- EXTRACT TEXT ---------- */
 
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
+      for (
+        let pageNum = 1;
+        pageNum <= pdfDoc.numPages;
+        pageNum++
+      ) {
+        const page =
+          await pdfDoc.getPage(pageNum);
 
-        const content = await page.getTextContent();
+        const content =
+          await page.getTextContent();
 
         text +=
           content.items
@@ -99,9 +131,11 @@ const worker = new Worker(
             .join(" ") + "\n";
       }
 
-      console.log("📄 Text length:", text.length);
+      console.log(
+        `📄 Extracted Text Length: ${text.length}`
+      );
 
-      /* ---------- SPLIT TEXT ---------- */
+      /* ---------- SPLIT INTO CHUNKS ---------- */
 
       const splitter =
         new RecursiveCharacterTextSplitter({
@@ -109,74 +143,121 @@ const worker = new Worker(
           chunkOverlap: 50,
         });
 
-      const chunks = await splitter.splitText(text);
+      const chunks =
+        await splitter.splitText(text);
 
-      console.log("✂️ Chunks created:", chunks.length);
+      console.log(
+        `✂️ Chunks Created: ${chunks.length}`
+      );
 
-      /* ---------- GEMINI EMBEDDINGS ---------- */
+      /* ---------- CREATE DOCUMENT ID ---------- */
 
-      const genAI = new GoogleGenAI({
-        apiKey: process.env.GOOGLE_API_KEY,
-      });
+      const documentId =
+        crypto.randomUUID();
 
-      const documentId = crypto.randomUUID();
+      /* ---------- EMBEDDINGS ---------- */
 
-      const documents = await Promise.all(
-        chunks.map(async (chunk, i) => {
+      const documents = [];
+
+      for (
+        let i = 0;
+        i < chunks.length;
+        i++
+      ) {
+        const chunk = chunks[i];
+
+        try {
           const result =
             await genAI.models.embedContent({
-              model: "gemini-embedding-2",
+              model:
+                "gemini-embedding-2",
               contents: chunk,
             });
 
-          return {
-              userId,
+          documents.push({
+            userId,
             documentId,
             chunkIndex: i,
             text: chunk,
             embedding:
               result.embeddings[0].values,
-          };
-        })
-      );
+          });
 
-      /* ---------- STORE IN MONGODB ---------- */
-
-      await DocumentChunk.insertMany(documents);
-
-      console.log(
-        "✅ Embeddings stored in MongoDB Atlas"
-      );
-
-      // Remove the PDF from the local system
-      try {
-        fs.unlinkSync(data.path);
-        console.log(`🗑️ Removed local file: ${data.path}`);
-      } catch (err) {
-        console.error(`⚠️ Failed to remove local file: ${data.path}`, err);
+          if (i % 20 === 0) {
+            console.log(
+              `📌 Embedded chunk ${i + 1}/${chunks.length}`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `❌ Failed chunk ${i}:`,
+            err.message
+          );
+        }
       }
 
-    } catch (error) {
-      console.error("❌ Worker Error:", error);
+      /* ---------- STORE ---------- */
 
-      // Important for BullMQ failure handling
+      if (documents.length > 0) {
+        await DocumentChunk.insertMany(
+          documents
+        );
+
+        console.log(
+          `✅ Stored ${documents.length} chunks`
+        );
+      }
+
+      console.log(
+        "🎉 PDF Processing Complete"
+      );
+
+      return {
+        success: true,
+        documentId,
+        chunks: documents.length,
+      };
+    } catch (error) {
+      console.error(
+        "❌ Worker Error:",
+        error
+      );
+
       throw error;
     }
   },
 
   {
     connection: redisConnection,
+    concurrency: 2,
   }
 );
 
-/* ---------- WORKER EVENTS ---------- */
+/* ---------- EVENTS ---------- */
 
 worker.on("completed", (job) => {
-  console.log(`✅ Job ${job.id} completed`);
+  console.log(
+    `✅ Job ${job.id} completed`
+  );
 });
 
 worker.on("failed", (job, err) => {
-  console.log(`❌ Job ${job?.id} failed`);
+  console.log(
+    `❌ Job ${job?.id} failed`
+  );
 
   console.error(err);
+});
+
+/* ---------- SHUTDOWN ---------- */
+
+process.on("SIGTERM", async () => {
+  console.log(
+    "🛑 Shutting down worker..."
+  );
+
+  await worker.close();
+  await redisConnection.quit();
+
+  process.exit(0);
 });
